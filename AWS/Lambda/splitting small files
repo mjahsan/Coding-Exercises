@@ -1,0 +1,98 @@
+==========================================================================================================
+AWS Lambda Function: S3 File Split
+==========================================================================================================
+
+This Lambda function is triggered whenever a new file is uploaded to an S3 bucket (via an S3 event trigger).
+
+It performs the following operations:
+
+---> Extracts the S3 bucket name and object (file) key from the event payload.
+
+---> Uses the Boto3 S3 client to access the file using the get_object API.
+
+---> Reads and decodes the file content (UTF-8) — suitable for small to medium files (<10MB).
+
+---> Converts the file into csv by means of creating a empty text file in disk.
+
+---> Splits one single file into multiple small files of the mentioned size (100000 row per split in this instance).
+
+---> Writes each split into a temporary empty text file in disk.
+
+---> Converts the file into csv.
+
+---> Writes each split back to S3 to the designated folder/bucket.
+
+---> Records the start time, end time and total time evolved.
+
+This serves as a base example for building event-driven data processing workflows using AWS Lambda and S3.
+"""
+
+import json
+import boto3
+import io
+import csv
+from botocore.exceptions import ClientError
+import time
+
+#Calling s3 client object
+s3 = boto3.client('s3')
+
+#Function to upload the files
+def upload_files (bucket, filename, header, split_num, rows):
+    base_filename = filename.split('/')[-1].split('.')[0] #Splitting up the file name as it the source file is located in a nested folder in S3
+    new_filename = f"staging/{filename}_part{split_num}.csv"
+    new_file = io.StringIO() #Creating an in-memory text file
+    csv_writer = csv.writer(new_file, lineterminator='\n') #Creating a csv file from the in-memory text file
+    csv_writer.writerow(header) #Copying the header to the rows
+    csv_writer.writerows(rows) #Copying the contents to the rows
+    new_file.seek(0) #Moving the cursor to the start to support other API calls
+    try:
+        s3.put_object(Bucket=bucket, Key=new_filename, Body=new_file.getvalue())
+        print(f"Uploaded split {split_num}: {new_filename}")
+    except ClientError as e:
+        print(f"Error uploading {new_filename}: {e}")
+    
+def lambda_handler(event, context):
+    start_time = time.time() #Capturing the start time
+
+    #Extracting the file and bucket from the event
+    for record in event['Records']:
+        bucket = record['s3']['bucket']['name']
+        filename = record['s3']['object']['key']
+    
+    #Accessing the file from the bucket
+    file = s3.get_object(Bucket=bucket, Key=filename)
+
+    #Downloading the file
+    file_content = file['Body'].read().decode('utf-8')
+
+    #Reading the csv file (file sizes in MBs)
+    csv_file_reader = csv.reader(io.StringIO(file_content)) #stringIo creates an empty text file in memory as csv.reader handles only files and not string
+    header = next(csv_file_reader) #this will skip the first row of the csv as it will be a header
+    
+    #Setting up the split
+    split_length = 100000
+    split_num = 1
+    rows =[]
+
+    #splitting the file into multiple files
+    for i, row in enumerate(csv_file_reader, start=1):
+        rows.append (row)
+        if i % split_length == 0:
+            print(f"Processing file: {filename} from bucket: {bucket}")
+            upload_files (bucket, filename, header, split_num, rows)
+            rows = []
+            split_num += 1
+    if rows: #Uploading the remaining rows (<100000) to S3
+        upload_files (bucket, filename, header, split_num, rows)
+    
+    end_time = time.time() #Capturing the end time
+
+    total_time = round(end_time - start_time, 2)
+    print(f"Total time taken: {total_time} seconds") #Capturing the total evolved time
+
+    return {
+        'statusCode': 200,
+        'message': f"The file, {filename} has been split into {split_num} files"
+    }
+    
