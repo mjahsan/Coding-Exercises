@@ -1,5 +1,5 @@
 ==========================================================================================================
-AWS Lambda Function: S3 File Split
+AWS Lambda Function: S3 File Split - Small Files (<100 MB)
 ==========================================================================================================
 
 This Lambda function is triggered whenever a new file is uploaded to an S3 bucket (via an S3 event trigger).
