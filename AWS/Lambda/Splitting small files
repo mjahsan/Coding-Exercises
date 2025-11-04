@@ -10,7 +10,7 @@ It performs the following operations:
 
 ---> Uses the Boto3 S3 client to access the file using the get_object API.
 
----> Reads and decodes the file content (UTF-8) — suitable for small to medium files (<10MB).
+---> Reads and decodes the file content (UTF-8) — suitable for small to medium files (<100MB).
 
 ---> Converts the file into csv by means of creating a empty text file in disk.
 
